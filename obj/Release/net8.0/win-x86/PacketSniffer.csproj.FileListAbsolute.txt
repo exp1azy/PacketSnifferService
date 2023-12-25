@@ -237,3 +237,4 @@ C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\win-x
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\win-x86\PacketSniffer.pdb
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\win-x86\PacketSniffer.genruntimeconfig.cache
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\win-x86\ref\PacketSniffer.dll
+C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\win-x86\PacketSniffer.sourcelink.json

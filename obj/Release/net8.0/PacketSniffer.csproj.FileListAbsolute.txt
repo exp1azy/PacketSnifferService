@@ -57,3 +57,4 @@ C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\refin
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\PacketSniffer.pdb
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\PacketSniffer.genruntimeconfig.cache
 C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\ref\PacketSniffer.dll
+C:\Users\Admin\source\repos\PacketSniffer\PacketSniffer\obj\Release\net8.0\PacketSniffer.sourcelink.json

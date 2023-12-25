@@ -14,6 +14,8 @@ namespace PacketSniffer
     {
         private readonly IDatabase _redis;
         private readonly ILogger<PcapAgent> _logger;
+        private readonly IConfiguration _config;
+
         private IPAddress? _localIP;
         private IPAddress? _virtualIP;
 
@@ -22,15 +24,16 @@ namespace PacketSniffer
         private const string _localPrefix = "192.168";
         private const string _virtualPrefix = "10";
 
-        public PcapAgent(ILogger<PcapAgent> logger)
+        public PcapAgent(ILogger<PcapAgent> logger, IConfiguration config)
         {
             _logger = logger;
+            _config = config;
 
             while (true)
             {
                 try
                 {
-                    var db = ConnectionMultiplexer.Connect("localhost");
+                    var db = ConnectionMultiplexer.Connect(_config["RedisConnection"]!);
                     _redis = db.GetDatabase();
                     break;
                 }
