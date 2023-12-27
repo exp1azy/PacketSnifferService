@@ -90,9 +90,9 @@ namespace PacketSniffer.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Не удалось установить соединение с Redis.
         /// </summary>
-        internal static string NoConnectionToRedis {
+        internal static string NoConnection {
             get {
-                return ResourceManager.GetString("NoConnectionToRedis", resourceCulture);
+                return ResourceManager.GetString("NoConnection", resourceCulture);
             }
         }
         
@@ -111,6 +111,15 @@ namespace PacketSniffer.Resources {
         internal static string NoSuchInterface {
             get {
                 return ResourceManager.GetString("NoSuchInterface", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Произошла непредвиденная ошибка: {0}.
+        /// </summary>
+        internal static string Unexpected {
+            get {
+                return ResourceManager.GetString("Unexpected", resourceCulture);
             }
         }
         

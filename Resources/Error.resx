@@ -126,7 +126,7 @@
   <data name="FailedToReadQueuesSizeData" xml:space="preserve">
     <value>Не удалось прочитать размер очередей из файла appsettings</value>
   </data>
-  <data name="NoConnectionToRedis" xml:space="preserve">
+  <data name="NoConnection" xml:space="preserve">
     <value>Не удалось установить соединение с Redis</value>
   </data>
   <data name="NoDevicesWereFound" xml:space="preserve">
@@ -134,6 +134,9 @@
   </data>
   <data name="NoSuchInterface" xml:space="preserve">
     <value>На вашем компьютере не найден запрашиваемый сетевой интерфейс по префиксу: {0}</value>
+  </data>
+  <data name="Unexpected" xml:space="preserve">
+    <value>Произошла непредвиденная ошибка: {0}</value>
   </data>
   <data name="UnsupportedOS" xml:space="preserve">
     <value>Ваша платформа не поддерживается, поскольку служба использует специальные функции Npcap, присутствующие только в Win32NT</value>

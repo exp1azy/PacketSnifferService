@@ -48,7 +48,7 @@ namespace PacketSniffer
                 }
                 catch
                 {
-                    _logger.LogError(Error.NoConnectionToRedis);
+                    _logger.LogError(Error.NoConnection);
                     Task.Delay(10000).Wait();
                 }
             }
@@ -101,10 +101,19 @@ namespace PacketSniffer
 
             var localIPTask = ListenRequiredInterfaceAsync(devices, interfaceIndex, stoppingToken);
 
-            while (_virtualIP == null || !stoppingToken.IsCancellationRequested)
+            while (_virtualIP == null)
             {
-                _virtualIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(networkConfig["VirtualIpPrefix"]!));
-                await Task.Delay(10000);
+                try
+                {
+                    stoppingToken.ThrowIfCancellationRequested();
+
+                    _virtualIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(networkConfig["VirtualIpPrefix"]!));
+                    await Task.Delay(2000);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
 
             if (!stoppingToken.IsCancellationRequested)
@@ -164,9 +173,9 @@ namespace PacketSniffer
             using var statisticsDevice = new StatisticsDevice(devices[interfaceToSniff].Interface);
             using var device = devices[interfaceToSniff];
 
-            device.OnPacketArrival += new PacketArrivalEventHandler(Device_OnPacketArrival);
             statisticsDevice.OnPcapStatistics += Device_OnPcapStatistics;
-                
+            device.OnPacketArrival += new PacketArrivalEventHandler(Device_OnPacketArrival);
+                         
             statisticsDevice.Open();
             device.Open();
 
@@ -177,9 +186,10 @@ namespace PacketSniffer
             device.StartCapture();
 
             while (!stoppingToken.IsCancellationRequested)
-            {
-                await Task.Delay(2000);
-            }          
+                await Task.Delay(2000); 
+            
+            statisticsDevice.StopCapture();
+            device.StopCapture();
         }
 
         /// <summary>
@@ -211,31 +221,47 @@ namespace PacketSniffer
         }
 
         /// <summary>
-        /// Метод, необходимый для массовой загрузки в stream Redis из очереди _rawPacketsQueue.
+        /// Метод, необходимый для массовой загрузки в поток Redis из очереди _rawPacketsQueue.
         /// </summary>
         /// <returns></returns>
         private async Task HandleRawPacketsQueueAsync()
         {
-            string serializedPacket = JsonConvert.SerializeObject(_rawPacketsQueue);
-            await _db.StreamAddAsync(Environment.MachineName, [
-                new NameValueEntry(_rawPacketRedisKey, serializedPacket)
-            ]);
+            try
+            {
+                string serializedPacket = JsonConvert.SerializeObject(_rawPacketsQueue);
+                await _db.StreamAddAsync(Environment.MachineName, [
+                    new NameValueEntry(_rawPacketRedisKey, serializedPacket)
+                ]);
 
-            _rawPacketsQueue.Clear();
+                _rawPacketsQueue.Clear();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(Error.Unexpected, ex.Message);
+                Environment.Exit(1);
+            }
         }
 
         /// <summary>
-        /// Метод, необходимый для массовой загрузки в stream Redis из очереди _statisticsQueue.
+        /// Метод, необходимый для массовой загрузки в поток Redis из очереди _statisticsQueue.
         /// </summary>
         /// <returns></returns>
         private async Task HandleStatisticsQueueAsync()
         {
-            string serializedStatistics = JsonConvert.SerializeObject(_statisticsQueue);
-            await _db.StreamAddAsync(Environment.MachineName, [
-                new NameValueEntry(_statisticsRedisKey, serializedStatistics)
-            ]);
+            try
+            {
+                string serializedStatistics = JsonConvert.SerializeObject(_statisticsQueue);
+                await _db.StreamAddAsync(Environment.MachineName, [
+                    new NameValueEntry(_statisticsRedisKey, serializedStatistics)
+                ]);
 
-            _statisticsQueue.Clear();
+                _statisticsQueue.Clear();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(Error.Unexpected, ex.Message);
+                Environment.Exit(1);
+            }
         }
 
         /// <summary>
@@ -255,4 +281,3 @@ namespace PacketSniffer
             Dns.GetHostAddresses(Dns.GetHostName()).Where(addr => addr.AddressFamily == AddressFamily.InterNetwork);
     }
 }
-
