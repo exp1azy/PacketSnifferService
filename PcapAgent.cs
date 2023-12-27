@@ -20,7 +20,6 @@ namespace PacketSniffer
         private readonly ILogger<PcapAgent> _logger;
         private readonly IConfiguration _config;
         private readonly int _maxQueueSize;
-        private readonly int _maxRedisSize;
 
         private const string _rawPacketRedisKey = "raw_packets";
         private const string _statisticsRedisKey = "statistics";
@@ -54,10 +53,9 @@ namespace PacketSniffer
                 }
             }
 
-            if (int.TryParse(_config["MaxQueueSize"], out var maxQueueSize) && int.TryParse(_config["MaxRedisSize"], out var maxRedisSize))
+            if (int.TryParse(_config["MaxQueueSize"], out var maxQueueSize))
             {
                 _maxQueueSize = maxQueueSize;
-                _maxRedisSize = maxRedisSize;
             }
             else
             {
@@ -224,7 +222,6 @@ namespace PacketSniffer
             ]);
 
             _rawPacketsQueue.Clear();
-            await TrimStreamAsync();
         }
 
         /// <summary>
@@ -239,20 +236,6 @@ namespace PacketSniffer
             ]);
 
             _statisticsQueue.Clear();
-            await TrimStreamAsync();
-        }
-
-        /// <summary>
-        /// Метод, необходимый для обрезки стрима Redis.
-        /// </summary>
-        /// <returns></returns>
-        private async Task TrimStreamAsync()
-        {
-            var redisSize = await _db.StreamLengthAsync(Environment.MachineName);
-            if (redisSize > _maxRedisSize)
-            {
-                await _db.StreamTrimAsync(Environment.MachineName, _maxRedisSize, true);
-            }
         }
 
         /// <summary>
