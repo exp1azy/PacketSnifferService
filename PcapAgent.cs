@@ -4,26 +4,36 @@ using StackExchange.Redis;
 using System.Net.Sockets;
 using System.Net;
 using SharpPcap;
-using PacketSniffer.Entities;
 using Newtonsoft.Json;
 using PacketSniffer.Resources;
+using System.Collections.Concurrent;
 
 namespace PacketSniffer
 {
-    internal sealed class PcapAgent : BackgroundService
+    /// <summary>
+    /// Класс-обработчик сетевого трафика.
+    /// </summary>
+    internal class PcapAgent : BackgroundService
     {
-        private readonly IDatabase _redis;
+        private readonly IDatabase _db;
+        private readonly ConnectionMultiplexer _connection;
         private readonly ILogger<PcapAgent> _logger;
         private readonly IConfiguration _config;
+        private readonly int _maxQueueSize;
+        private readonly int _maxRedisSize;
 
-        private IPAddress? _localIP;
+        private const string _rawPacketRedisKey = "raw_packets";
+        private const string _statisticsRedisKey = "statistics";
+
         private IPAddress? _virtualIP;
+        private ConcurrentQueue<StatisticsEventArgs> _statisticsQueue = new();
+        private ConcurrentQueue<RawCapture> _rawPacketsQueue = new();
 
-        private const string _networkAdapterPrefix = "Realtek";
-        private const string _virtualNetworkAdapterPrefix = "TAP-Windows";
-        private const string _localPrefix = "192.168";
-        private const string _virtualPrefix = "10";
-
+        /// <summary>
+        /// Конструктор.
+        /// </summary>
+        /// <param name="logger">Логи.</param>
+        /// <param name="config">Файл конфигурации.</param>
         public PcapAgent(ILogger<PcapAgent> logger, IConfiguration config)
         {
             _logger = logger;
@@ -33,8 +43,8 @@ namespace PacketSniffer
             {
                 try
                 {
-                    var db = ConnectionMultiplexer.Connect(_config["RedisConnection"]!);
-                    _redis = db.GetDatabase();
+                    _connection = ConnectionMultiplexer.Connect(_config["RedisConnection"]!);
+                    _db = _connection.GetDatabase();
                     break;
                 }
                 catch
@@ -43,8 +53,24 @@ namespace PacketSniffer
                     Task.Delay(10000).Wait();
                 }
             }
+
+            if (int.TryParse(_config["MaxQueueSize"], out var maxQueueSize) && int.TryParse(_config["MaxRedisSize"], out var maxRedisSize))
+            {
+                _maxQueueSize = maxQueueSize;
+                _maxRedisSize = maxRedisSize;
+            }
+            else
+            {
+                _logger.LogError(Error.FailedToReadQueuesSizeData);
+                Environment.Exit(1);
+            }
         }
 
+        /// <summary>
+        /// Входящий метод, получающий сетевые устройства и интерфейсы, по которым запускается прослушивание сетевого трафика.
+        /// </summary>
+        /// <param name="stoppingToken">Токен отмены.</param>
+        /// <returns></returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var os = Environment.OSVersion;
@@ -61,13 +87,17 @@ namespace PacketSniffer
                 Environment.Exit(1);
             }
 
-            _localIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(_localPrefix));
-            _virtualIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(_virtualPrefix));
+            var networkConfig = _config.GetSection("Network");
+            if (networkConfig == null || !networkConfig.GetChildren().Any())
+            {
+                _logger.LogError(Error.FailedToReadNetworkPrefixData);
+                Environment.Exit(1);
+            }
 
-            int interfaceIndex = GetInterfaceIndex(devices, _networkAdapterPrefix);
+            int interfaceIndex = GetInterfaceIndex(devices, networkConfig["AdapterPrefix"]!);
             if (interfaceIndex == -1)
             {
-                _logger.LogError(Error.NoInterfacesWereFound);
+                _logger.LogError(Error.NoSuchInterface, networkConfig["AdapterPrefix"]);
                 Environment.Exit(1);
             }
 
@@ -75,95 +105,169 @@ namespace PacketSniffer
 
             while (_virtualIP == null || !stoppingToken.IsCancellationRequested)
             {
-                _virtualIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(_virtualPrefix));
+                _virtualIP = GetIPs().FirstOrDefault(addr => addr.ToString().StartsWith(networkConfig["VirtualIpPrefix"]!));
                 await Task.Delay(10000);
             }
 
             if (!stoppingToken.IsCancellationRequested)
             {
-                interfaceIndex = GetInterfaceIndex(devices, _virtualNetworkAdapterPrefix);
+                interfaceIndex = GetInterfaceIndex(devices, networkConfig["VirtualAdapterPrefix"]!);
                 if (interfaceIndex == -1)
                 {
-                    _logger.LogError(Error.NoInterfacesWereFound);
+                    _logger.LogError(Error.NoSuchInterface, networkConfig["VirtualAdapterPrefix"]);
                     Environment.Exit(1);
                 }
 
                 var virtualIPTask = ListenRequiredInterfaceAsync(devices, interfaceIndex, stoppingToken);
 
                 await Task.WhenAll(localIPTask, virtualIPTask);
-            }
+            } 
+            
+            await _connection.CloseAsync();
         }
 
+        /// <summary>
+        /// Метод, запускающий в цикле таски, в которых происходит перехват пакетов, используя указанный протокол.
+        /// </summary>
+        /// <param name="devices">Устройства.</param>
+        /// <param name="interfaceToSniff">Интерфейс, с которого происходит захват пакетов.</param>
+        /// <param name="stoppingToken">Токен отмены.</param>
+        /// <returns></returns>
         private async Task ListenRequiredInterfaceAsync(LibPcapLiveDeviceList devices, int interfaceToSniff, CancellationToken stoppingToken)
         {
-            var tcpTask = Task.Run(() => 
-                StartCaptureUsingRequiredProtocolAsync(devices, interfaceToSniff, "tcp", stoppingToken));
-            var udpTask = Task.Run(() => 
-                StartCaptureUsingRequiredProtocolAsync(devices, interfaceToSniff, "udp", stoppingToken));
+            var tasks = new List<Task>();
 
-            await Task.WhenAll(tcpTask, udpTask);
+            var filters = _config.GetSection("Filters").Get<List<string>>();
+            if (filters == null || filters.Count == 0)
+            {
+                _logger.LogError(Error.FailedToReadProtocolsToCapture);
+                Environment.Exit(1);
+            }
+
+            foreach (var filter in filters)
+            {
+                tasks.Add(Task.Run(() =>
+                StartCaptureUsingRequiredProtocolAsync(devices, interfaceToSniff, filter, stoppingToken)));
+            }
+
+            await Task.WhenAll(tasks);
         }
 
+        /// <summary>
+        /// Метод, прослушивающий указанный интерфейс и собирающий как сами пакеты, так и статистику по ним.
+        /// </summary>
+        /// <param name="devices">Устройства.</param>
+        /// <param name="interfaceToSniff">Интерфейс, с которого происходит захват пакетов.</param>
+        /// <param name="filter">Протокол.</param>
+        /// <param name="stoppingToken">Токен отмены.</param>
+        /// <returns></returns>
         private async Task StartCaptureUsingRequiredProtocolAsync(LibPcapLiveDeviceList devices, int interfaceToSniff, string filter, CancellationToken stoppingToken)
         {
-            using (var device = new StatisticsDevice(devices[interfaceToSniff].Interface))
+            using var statisticsDevice = new StatisticsDevice(devices[interfaceToSniff].Interface);
+            using var device = devices[interfaceToSniff];
+
+            device.OnPacketArrival += new PacketArrivalEventHandler(Device_OnPacketArrival);
+            statisticsDevice.OnPcapStatistics += Device_OnPcapStatistics;
+                
+            statisticsDevice.Open();
+            device.Open();
+
+            statisticsDevice.Filter = filter;
+            device.Filter = filter;
+
+            statisticsDevice.StartCapture();
+            device.StartCapture();
+
+            while (!stoppingToken.IsCancellationRequested)
             {
-                device.OnPcapStatistics += OnPcapStatistics;
-                device.Open();
+                await Task.Delay(2000);
+            }          
+        }
 
-                device.Filter = filter;
-                device.StartCapture();
+        /// <summary>
+        /// Метод-обработчик события OnPacketArrival.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void Device_OnPacketArrival(object sender, PacketCapture e)
+        {
+            var rawPacket = e.GetPacket();
 
-                var ipAddress = device.Description.StartsWith(_networkAdapterPrefix) ? _localIP : _virtualIP;
+            if (_rawPacketsQueue.Count < _maxQueueSize)           
+                _rawPacketsQueue.Enqueue(rawPacket);               
+            else
+                HandleRawPacketsQueueAsync().Wait();                        
+        }
 
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    await Task.Delay(10000);
+        /// <summary>
+        /// Метод-обработчик события OnPcapStatistics.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void Device_OnPcapStatistics(object sender, StatisticsEventArgs e)
+        {          
+            if (_statisticsQueue.Count < _maxQueueSize)          
+                _statisticsQueue.Enqueue(e);          
+            else          
+                HandleStatisticsQueueAsync().Wait();           
+        }
 
-                    var statistics = new Statistics
-                    {
-                        IPAddress = ipAddress.ToString(),
-                        ProtocolToSniff = filter,
-                        ReceievedPackets = device.Statistics.ReceivedPackets.ToString(),
-                        DroppedPackets = device.Statistics.DroppedPackets.ToString(),
-                        InterfaceDroppedPackets = device.Statistics.InterfaceDroppedPackets.ToString()
-                    };
-                    string serializedStatistics = JsonConvert.SerializeObject(statistics);
+        /// <summary>
+        /// Метод, необходимый для массовой загрузки в stream Redis из очереди _rawPacketsQueue.
+        /// </summary>
+        /// <returns></returns>
+        private async Task HandleRawPacketsQueueAsync()
+        {
+            string serializedPacket = JsonConvert.SerializeObject(_rawPacketsQueue);
+            await _db.StreamAddAsync(Environment.MachineName, [
+                new NameValueEntry(_rawPacketRedisKey, serializedPacket)
+            ]);
 
-                    await _redis.StreamAddAsync(Environment.MachineName,
-                    [
-                        new NameValueEntry("statistics", serializedStatistics)
-                    ]);
-                }
+            _rawPacketsQueue.Clear();
+            await TrimStreamAsync();
+        }
+
+        /// <summary>
+        /// Метод, необходимый для массовой загрузки в stream Redis из очереди _statisticsQueue.
+        /// </summary>
+        /// <returns></returns>
+        private async Task HandleStatisticsQueueAsync()
+        {
+            string serializedStatistics = JsonConvert.SerializeObject(_statisticsQueue);
+            await _db.StreamAddAsync(Environment.MachineName, [
+                new NameValueEntry(_statisticsRedisKey, serializedStatistics)
+            ]);
+
+            _statisticsQueue.Clear();
+            await TrimStreamAsync();
+        }
+
+        /// <summary>
+        /// Метод, необходимый для обрезки стрима Redis.
+        /// </summary>
+        /// <returns></returns>
+        private async Task TrimStreamAsync()
+        {
+            var redisSize = await _db.StreamLengthAsync(Environment.MachineName);
+            if (redisSize > _maxRedisSize)
+            {
+                await _db.StreamTrimAsync(Environment.MachineName, _maxRedisSize, true);
             }
         }
 
-        private void OnPcapStatistics(object sender, StatisticsEventArgs e)
-        {
-            var bps = e.ReceivedBytes * 8;
-            var pps = e.ReceivedPackets;
-            var ts = e.Timeval.Date.ToLocalTime();
-            var ipAddress = e.Device.Description.StartsWith(_networkAdapterPrefix) ? _localIP : _virtualIP;
-
-            var pcapMetrics = new PacketMetrics
-            {
-                IPAddress = ipAddress.ToString(),
-                Ts = ts,
-                Bps = bps,
-                Pps = pps,
-                Filter = e.Device.Filter
-            };
-            string serializedPcapMetrics = JsonConvert.SerializeObject(pcapMetrics);
-
-            _redis.StreamAddAsync(Environment.MachineName,
-            [
-                new NameValueEntry("metrics", serializedPcapMetrics)
-            ]).Wait();
-        }
-
+        /// <summary>
+        /// Метод, необходимый для получения индекса запрашиваемого устройства.
+        /// </summary>
+        /// <param name="devices">Устройства.</param>
+        /// <param name="interfaceToSniff">Интерфейс, необходимый для захвата пакетов.</param>
+        /// <returns>Индекс устройства.</returns>
         private int GetInterfaceIndex(LibPcapLiveDeviceList devices, string interfaceToSniff) =>
             devices.IndexOf(devices.First(d => d.Description.Contains(interfaceToSniff)));
 
+        /// <summary>
+        /// Метод, необходимый для получения IPv4-адресов устройств данной машины.
+        /// </summary>
+        /// <returns>IPv4-адреса.</returns>
         private IEnumerable<IPAddress> GetIPs() =>
             Dns.GetHostAddresses(Dns.GetHostName()).Where(addr => addr.AddressFamily == AddressFamily.InterNetwork);
     }

@@ -61,6 +61,33 @@ namespace PacketSniffer.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Не удалось прочитать данные о сети из файла appsettings.
+        /// </summary>
+        internal static string FailedToReadNetworkPrefixData {
+            get {
+                return ResourceManager.GetString("FailedToReadNetworkPrefixData", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Не удалось прочитать протоколы, необходимые для перехвата пакетов, из файла appsettings.
+        /// </summary>
+        internal static string FailedToReadProtocolsToCapture {
+            get {
+                return ResourceManager.GetString("FailedToReadProtocolsToCapture", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Не удалось прочитать размер очередей из файла appsettings.
+        /// </summary>
+        internal static string FailedToReadQueuesSizeData {
+            get {
+                return ResourceManager.GetString("FailedToReadQueuesSizeData", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Не удалось установить соединение с Redis.
         /// </summary>
         internal static string NoConnectionToRedis {
@@ -79,11 +106,11 @@ namespace PacketSniffer.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на На вашем компьютере не найден сетевой интерфейс для перехвата пакетов.
+        ///   Ищет локализованную строку, похожую на На вашем компьютере не найден запрашиваемый сетевой интерфейс по префиксу: {0}.
         /// </summary>
-        internal static string NoInterfacesWereFound {
+        internal static string NoSuchInterface {
             get {
-                return ResourceManager.GetString("NoInterfacesWereFound", resourceCulture);
+                return ResourceManager.GetString("NoSuchInterface", resourceCulture);
             }
         }
         

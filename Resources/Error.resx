@@ -117,14 +117,23 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="FailedToReadNetworkPrefixData" xml:space="preserve">
+    <value>Не удалось прочитать данные о сети из файла appsettings</value>
+  </data>
+  <data name="FailedToReadProtocolsToCapture" xml:space="preserve">
+    <value>Не удалось прочитать протоколы, необходимые для перехвата пакетов, из файла appsettings</value>
+  </data>
+  <data name="FailedToReadQueuesSizeData" xml:space="preserve">
+    <value>Не удалось прочитать размер очередей из файла appsettings</value>
+  </data>
   <data name="NoConnectionToRedis" xml:space="preserve">
     <value>Не удалось установить соединение с Redis</value>
   </data>
   <data name="NoDevicesWereFound" xml:space="preserve">
     <value>На вашем компьютере не было найдено ни одного сетевого устройства</value>
   </data>
-  <data name="NoInterfacesWereFound" xml:space="preserve">
-    <value>На вашем компьютере не найден сетевой интерфейс для перехвата пакетов</value>
+  <data name="NoSuchInterface" xml:space="preserve">
+    <value>На вашем компьютере не найден запрашиваемый сетевой интерфейс по префиксу: {0}</value>
   </data>
   <data name="UnsupportedOS" xml:space="preserve">
     <value>Ваша платформа не поддерживается, поскольку служба использует специальные функции Npcap, присутствующие только в Win32NT</value>
