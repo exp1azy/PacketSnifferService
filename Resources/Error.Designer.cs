@@ -72,9 +72,9 @@ namespace PacketSniffer.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Не удалось прочитать протоколы, необходимые для перехвата пакетов, из файла appsettings.
         /// </summary>
-        internal static string FailedToReadProtocolsToCapture {
+        internal static string FailedToReadProtocols {
             get {
-                return ResourceManager.GetString("FailedToReadProtocolsToCapture", resourceCulture);
+                return ResourceManager.GetString("FailedToReadProtocols", resourceCulture);
             }
         }
         

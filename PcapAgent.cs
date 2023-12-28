@@ -15,15 +15,15 @@ namespace PacketSniffer
     /// </summary>
     internal class PcapAgent : BackgroundService
     {
-        private readonly IDatabase _db;
-        private readonly ConnectionMultiplexer _connection;
         private readonly ILogger<PcapAgent> _logger;
         private readonly IConfiguration _config;
         private readonly int _maxQueueSize;
 
-        private const string _rawPacketRedisKey = "raw_packets";
-        private const string _statisticsRedisKey = "statistics";
-
+        private string _redisStreamKey = $"host_{Environment.MachineName}";
+        private string _rawPacketValueKey = "raw_packets";
+        private string _statisticsValueKey = "statistics";
+        private IDatabase _db;
+        private ConnectionMultiplexer _connection;      
         private IPAddress? _virtualIP;
         private ConcurrentQueue<StatisticsEventArgs> _statisticsQueue = new();
         private ConcurrentQueue<RawCapture> _rawPacketsQueue = new();
@@ -38,6 +38,24 @@ namespace PacketSniffer
             _logger = logger;
             _config = config;
 
+            ConnectToRedis();
+
+            if (int.TryParse(_config["MaxQueueSize"], out var maxQueueSize))
+            {
+                _maxQueueSize = maxQueueSize;
+            }
+            else
+            {
+                _logger.LogError(Error.FailedToReadQueuesSizeData);
+                Environment.Exit(1);
+            }
+        }
+
+        /// <summary>
+        /// Метод установки соединения с Redis.
+        /// </summary>
+        private void ConnectToRedis()
+        {
             while (true)
             {
                 try
@@ -51,16 +69,6 @@ namespace PacketSniffer
                     _logger.LogError(Error.NoConnection);
                     Task.Delay(10000).Wait();
                 }
-            }
-
-            if (int.TryParse(_config["MaxQueueSize"], out var maxQueueSize))
-            {
-                _maxQueueSize = maxQueueSize;
-            }
-            else
-            {
-                _logger.LogError(Error.FailedToReadQueuesSizeData);
-                Environment.Exit(1);
             }
         }
 
@@ -147,7 +155,7 @@ namespace PacketSniffer
             var filters = _config.GetSection("Filters").Get<List<string>>();
             if (filters == null || filters.Count == 0)
             {
-                _logger.LogError(Error.FailedToReadProtocolsToCapture);
+                _logger.LogError(Error.FailedToReadProtocols);
                 Environment.Exit(1);
             }
 
@@ -229,11 +237,15 @@ namespace PacketSniffer
             try
             {
                 string serializedPacket = JsonConvert.SerializeObject(_rawPacketsQueue);
-                await _db.StreamAddAsync(Environment.MachineName, [
-                    new NameValueEntry(_rawPacketRedisKey, serializedPacket)
+                await _db.StreamAddAsync(_redisStreamKey, [
+                    new NameValueEntry(_rawPacketValueKey, serializedPacket)
                 ]);
 
                 _rawPacketsQueue.Clear();
+            }
+            catch (RedisConnectionException)
+            {
+                ConnectToRedis();
             }
             catch (Exception ex)
             {
@@ -251,11 +263,15 @@ namespace PacketSniffer
             try
             {
                 string serializedStatistics = JsonConvert.SerializeObject(_statisticsQueue);
-                await _db.StreamAddAsync(Environment.MachineName, [
-                    new NameValueEntry(_statisticsRedisKey, serializedStatistics)
+                await _db.StreamAddAsync(_redisStreamKey, [
+                    new NameValueEntry(_statisticsValueKey, serializedStatistics)
                 ]);
 
                 _statisticsQueue.Clear();
+            }
+            catch (RedisConnectionException)
+            {
+                ConnectToRedis();
             }
             catch (Exception ex)
             {

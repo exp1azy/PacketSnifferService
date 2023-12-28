@@ -120,7 +120,7 @@
   <data name="FailedToReadNetworkPrefixData" xml:space="preserve">
     <value>Не удалось прочитать данные о сети из файла appsettings</value>
   </data>
-  <data name="FailedToReadProtocolsToCapture" xml:space="preserve">
+  <data name="FailedToReadProtocols" xml:space="preserve">
     <value>Не удалось прочитать протоколы, необходимые для перехвата пакетов, из файла appsettings</value>
   </data>
   <data name="FailedToReadQueuesSizeData" xml:space="preserve">
